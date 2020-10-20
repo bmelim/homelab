@@ -1,0 +1,151 @@
+version: '3.1'
+
+services:
+  adminer:
+    image: adminer
+    restart: always
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    ports:
+      - 13306:8080
+  elasticsearch:
+    image: elasticsearch:7.0.1
+    restart: always
+    environment:
+      network.host: 0.0.0.0
+      discovery.type: single-node
+      bootstrap.memory_lock: 'true'
+      ES_JAVA_OPTS: -Xms512m -Xmx512m -Dnetworkaddress.cache.ttl=60
+      xpack.security.enabled: 'false'
+      xpack.ml.enabled: 'false'
+    ports:
+      - 9200:9200
+      - 9300:9300
+    volumes:
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/logs:/var/log/elasticsearch
+  grafana:
+    image: grafana/grafana:6.1.6
+    restart: always
+    ports:
+      - 3000:3000
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/logs:/var/log/grafana
+  influxdb:
+    image: influxdb:1.5-alpine
+    restart: always
+    environment:
+      INFLUXDB_DB: metrics
+      INFLUXDB_GRAPHITE_ENABLED: 'true'
+    ports:
+      - 8086:8086
+      - 2003:2003
+    volumes:
+      - ./influxdb/data:/var/lib/influxdb
+  kibana:
+    image: kibana:7.0.1
+    restart: always
+    environment:
+      XPACK_INFRA_ENABLED: 'false'
+      XPACK_GRAPH_ENABLED: 'false'
+      XPACK_SECURITY_ENABLED: 'false'
+      XPACK_LICENSE_MANAGEMENT_ENABLED: 'false'
+      XPACK_ROLLUP_ENABLED: 'false'
+      KIBANA_DEFAULTAPPID: 'discover'
+    ports:
+      - 5601:5601
+    depends_on:
+      - elasticsearch
+  logstash:
+    image: logstash:7.0.1
+    restart: always
+    environment:
+      xpack.monitoring.enabled: 'false'
+    ports:
+      - 12201:12201/udp
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/index-template.json:/usr/share/logstash/index-template.json:ro
+    depends_on:
+      - elasticsearch
+  minio:
+    image: minio/minio
+    restart: always
+    environment:
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+    ports:
+      - 9000:9000
+    volumes:
+      - ./minio/data:/data
+    command: server /data
+  mysql:
+    image: percona:5.7
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: pa55w0rd
+    ports:
+      - 3306:3306
+    volumes:
+      - ./mysql/logs:/var/log/mysql
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/server.cnf:/etc/my.cnf.d/server.cnf:ro
+    depends_on:
+      - adminer
+  nats:
+    image: nats:linux
+    restart: always
+    ports:
+      - 4222:4222
+      - 6222:6222
+      - 8222:8222
+    depends_on:
+      - natsboard
+  natsboard:
+    image: urashidmalik/natsboard
+    restart: always
+    environment:
+      NATS_MONITOR_URL: http://nats:8222
+    ports:
+      - 18222:3000
+      - 3001:3001
+  rabbitmq:
+    image: rabbitmq:management-alpine
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - ./rabbitmq/logs:/data/log
+      - ./rabbitmq/data:/data/mnesia
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - 6379:6379
+    volumes:
+      - ./redis/data:/data
+    command: redis-server --appendonly yes
+    depends_on:
+      - redis-commander
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    restart: always
+    environment:
+      REDIS_HOSTS: redis
+    ports:
+      - 16379:8081
+  jaeger:
+    image: jaegertracing/all-in-one:1.10
+    restart: always
+    environment:
+      COLLECTOR_ZIPKIN_HTTP_PORT: 9411
+    ports:
+      - 5775:5775/udp
+      - 6831:6831/udp
+      - 6832:6832/udp
+      - 5778:5778
+      - 16686:16686
+      - 14268:14268
+      - 9411:9411
